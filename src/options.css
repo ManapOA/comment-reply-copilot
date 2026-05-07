@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  background: #17181b;
+  color: #f1f3f4;
+  margin: 0;
+}
+
+main {
+  box-sizing: border-box;
+  max-width: 680px;
+  padding: 28px;
+}
+
+h1 {
+  font-size: 24px;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 16px;
+  margin: 26px 0 10px;
+}
+
+.hint,
+li {
+  color: #bdc1c6;
+}
+
+form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.provider-card {
+  border: 1px solid #34363a;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.provider-card[hidden] {
+  display: none;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  background: #242529;
+  border: 1px solid #414247;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #f1f3f4;
+  font: 14px/1.4 Arial, sans-serif;
+  padding: 10px;
+  width: 100%;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  background: #3ea6ff;
+  border: 0;
+  border-radius: 6px;
+  color: #061622;
+  cursor: pointer;
+  font: 700 14px/1 Arial, sans-serif;
+  justify-self: start;
+  min-height: 36px;
+  padding: 10px 16px;
+}
+
+#status {
+  color: #81c995;
+  min-height: 18px;
+}
+
+ol {
+  padding-left: 20px;
+}
