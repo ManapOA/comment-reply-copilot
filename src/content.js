@@ -578,13 +578,14 @@ function showPanel(anchor, state) {
   } else if (state.customHtml) {
     panel.innerHTML = state.customHtml;
   } else if (state.error) {
+    const errorView = getErrorView(state.error);
     panel.innerHTML = `
       <div class="ccr-top">
-        <strong>Нужна настройка</strong>
+        <strong>${escapeHtml(errorView.title)}</strong>
         <button type="button" class="ccr-icon" data-action="close">x</button>
       </div>
-      <div class="ccr-error">${escapeHtml(state.error)}</div>
-      <button type="button" class="ccr-secondary" data-action="settings">Открыть настройки</button>
+      <div class="ccr-error">${escapeHtml(errorView.message)}</div>
+      <button type="button" class="ccr-secondary" data-action="settings">${escapeHtml(errorView.button)}</button>
     `;
   } else {
     panel.innerHTML = renderResult(state.result);
@@ -639,6 +640,46 @@ function showPanel(anchor, state) {
   });
 }
 
+function getErrorView(error) {
+  const message = String(error || "Не удалось получить ответ.");
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("high demand") ||
+    lower.includes("overloaded") ||
+    lower.includes("temporarily unavailable") ||
+    lower.includes("try again later") ||
+    lower.includes("rate limit") ||
+    lower.includes("429")
+  ) {
+    return {
+      title: "Модель временно недоступна",
+      message: `${message}\n\nПопробуй еще раз позже или выбери другую модель/провайдера в настройках.`,
+      button: "Сменить модель"
+    };
+  }
+
+  if (
+    lower.includes("api key") ||
+    lower.includes("apikey") ||
+    lower.includes("unauthorized") ||
+    lower.includes("invalid x-api-key") ||
+    lower.includes("401")
+  ) {
+    return {
+      title: "Нужна настройка",
+      message,
+      button: "Открыть настройки"
+    };
+  }
+
+  return {
+    title: "Ошибка генерации",
+    message,
+    button: "Открыть настройки"
+  };
+}
+
 function renderResult(result) {
   return `
     <div class="ccr-top">
@@ -650,8 +691,8 @@ function renderResult(result) {
     </div>
     <label class="ccr-label">Публиковать</label>
     <div class="ccr-box">${escapeHtml(result.reply || "")}</div>
-    <label class="ccr-label">По-русски</label>
-    <div class="ccr-box ccr-muted">${escapeHtml(result.russian || "")}</div>
+    <label class="ccr-label">Превью</label>
+    <div class="ccr-box ccr-muted">${escapeHtml(result.preview || result.russian || "")}</div>
     ${result.note ? `<div class="ccr-note">${escapeHtml(result.note)}</div>` : ""}
     <div class="ccr-actions">
       <button type="button" class="ccr-primary" data-action="insert">Вставить</button>
@@ -777,7 +818,7 @@ function renderBulkItem(item, index) {
       <strong>${escapeHtml(title)}</strong>
       <p>${escapeHtml(item.payload.comment)}</p>
       <div class="ccr-box">${escapeHtml(item.result.reply)}</div>
-      <div class="ccr-box ccr-muted">${escapeHtml(item.result.russian)}</div>
+      <div class="ccr-box ccr-muted">${escapeHtml(item.result.preview || item.result.russian || "")}</div>
       ${item.inserted ? `<div class="ccr-note">Вставлено в поле ответа.</div>` : ""}
       <div class="ccr-actions">
         <button type="button" class="ccr-primary" data-action="bulk-insert">Вставить</button>
@@ -1022,7 +1063,7 @@ async function insertBulkReplies(items) {
 
 function looksLikeJsonFragment(value) {
   const text = String(value || "").trim();
-  return text.startsWith("{") || text.includes('"reply"') || text.includes('"russian"');
+  return text.startsWith("{") || text.includes('"reply"') || text.includes('"preview"') || text.includes('"russian"');
 }
 
 function countInserted(items) {

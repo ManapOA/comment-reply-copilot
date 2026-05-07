@@ -7,12 +7,14 @@ body {
   background: #17181b;
   color: #f1f3f4;
   margin: 0;
+  min-width: 520px;
 }
 
 main {
   box-sizing: border-box;
-  max-width: 680px;
-  padding: 28px;
+  max-width: 560px;
+  padding: 24px 28px;
+  width: 100%;
 }
 
 h1 {
@@ -20,27 +22,28 @@ h1 {
   margin: 0 0 8px;
 }
 
-h2 {
-  font-size: 16px;
-  margin: 26px 0 10px;
+.hint {
+  color: #bdc1c6;
 }
 
-.hint,
-li {
-  color: #bdc1c6;
+.hint {
+  max-width: 420px;
 }
 
 form {
   display: grid;
-  gap: 14px;
-  margin-top: 22px;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
 }
 
 .provider-card {
   border: 1px solid #34363a;
   border-radius: 8px;
   display: grid;
-  gap: 14px;
+  gap: 12px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: 14px;
 }
 
@@ -53,6 +56,16 @@ label {
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
+  min-width: 0;
+}
+
+.full-row,
+.custom-model {
+  grid-column: 1 / -1;
+}
+
+.provider-select {
+  max-width: 240px;
 }
 
 input,
@@ -65,10 +78,12 @@ textarea {
   color: #f1f3f4;
   font: 14px/1.4 Arial, sans-serif;
   padding: 10px;
+  min-width: 0;
   width: 100%;
 }
 
 textarea {
+  min-height: 82px;
   resize: vertical;
 }
 
@@ -85,10 +100,7 @@ button {
 }
 
 #status {
+  align-self: center;
   color: #81c995;
   min-height: 18px;
-}
-
-ol {
-  padding-left: 20px;
 }

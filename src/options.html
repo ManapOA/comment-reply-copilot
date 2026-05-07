@@ -3,17 +3,25 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Comment Reply Copilot</title>
+    <title>TubeReply</title>
     <link rel="stylesheet" href="options.css">
   </head>
   <body>
     <main>
-      <h1>Comment Reply Copilot</h1>
-      <p class="hint">&#1050;&#1083;&#1102;&#1095;&#1080; &#1093;&#1088;&#1072;&#1085;&#1103;&#1090;&#1089;&#1103; &#1090;&#1086;&#1083;&#1100;&#1082;&#1086; &#1074; &#1083;&#1086;&#1082;&#1072;&#1083;&#1100;&#1085;&#1086;&#1084; &#1093;&#1088;&#1072;&#1085;&#1080;&#1083;&#1080;&#1097;&#1077; Chrome &#1085;&#1072; &#1101;&#1090;&#1086;&#1084; &#1082;&#1086;&#1084;&#1087;&#1100;&#1102;&#1090;&#1077;&#1088;&#1077;.</p>
+      <h1>TubeReply</h1>
+      <p class="hint" data-i18n="privacyHint">Ключи хранятся только в локальном хранилище Chrome на этом компьютере.</p>
 
       <form id="settings">
         <label>
-          &#1055;&#1088;&#1086;&#1074;&#1072;&#1081;&#1076;&#1077;&#1088;
+          <span data-i18n="uiLanguage">Язык интерфейса</span>
+          <select id="uiLanguage">
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+
+        <label>
+          <span data-i18n="provider">Провайдер</span>
           <select id="provider">
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
@@ -28,7 +36,11 @@
           </label>
           <label>
             OpenAI model
-            <input id="openaiModel" type="text" placeholder="gpt-5.4-mini">
+            <select id="openaiModel" data-model-select="openai"></select>
+          </label>
+          <label class="custom-model" data-custom-model="openai" hidden>
+            Custom OpenAI model
+            <input id="openaiCustomModel" type="text" placeholder="gpt-5.4-mini">
           </label>
         </div>
 
@@ -39,7 +51,11 @@
           </label>
           <label>
             Gemini model
-            <input id="geminiModel" type="text" placeholder="gemini-2.5-flash">
+            <select id="geminiModel" data-model-select="gemini"></select>
+          </label>
+          <label class="custom-model" data-custom-model="gemini" hidden>
+            Custom Gemini model
+            <input id="geminiCustomModel" type="text" placeholder="gemini-2.5-flash">
           </label>
         </div>
 
@@ -50,45 +66,38 @@
           </label>
           <label>
             Anthropic model
-            <input id="anthropicModel" type="text" placeholder="claude-sonnet-4-20250514">
+            <select id="anthropicModel" data-model-select="anthropic"></select>
+          </label>
+          <label class="custom-model" data-custom-model="anthropic" hidden>
+            Custom Anthropic model
+            <input id="anthropicCustomModel" type="text" placeholder="claude-sonnet-4-20250514">
           </label>
         </div>
 
         <label>
-          &#1071;&#1079;&#1099;&#1082; &#1086;&#1090;&#1074;&#1077;&#1090;&#1072;
-          <select id="replyLanguage">
-            <option value="auto">&#1050;&#1072;&#1082; &#1091; &#1082;&#1086;&#1084;&#1084;&#1077;&#1085;&#1090;&#1072;&#1090;&#1086;&#1088;&#1072;</option>
-            <option value="Portuguese">Portuguese</option>
-            <option value="English">English</option>
-            <option value="Spanish">Spanish</option>
-            <option value="Russian">Russian</option>
-          </select>
+          <span data-i18n="replyLanguage">Язык ответа</span>
+          <select id="replyLanguage"></select>
         </label>
 
         <label>
-          &#1052;&#1072;&#1082;&#1089;&#1080;&#1084;&#1091;&#1084; &#1089;&#1083;&#1086;&#1074;
+          <span data-i18n="previewLanguage">Язык превью</span>
+          <select id="previewLanguage"></select>
+        </label>
+
+        <label>
+          <span data-i18n="maxWords">Максимум слов</span>
           <input id="maxWords" type="number" min="5" max="120" step="1">
         </label>
 
-        <label>
-          &#1058;&#1086;&#1085; &#1082;&#1072;&#1085;&#1072;&#1083;&#1072;
-          <textarea id="brandVoice" rows="5"></textarea>
+        <label class="full-row">
+          <span data-i18n="brandVoice">Тон канала</span>
+          <textarea id="brandVoice" rows="3"></textarea>
         </label>
 
-        <button type="submit">&#1057;&#1086;&#1093;&#1088;&#1072;&#1085;&#1080;&#1090;&#1100;</button>
+        <button type="submit" data-i18n="save">Сохранить</button>
         <span id="status" role="status"></span>
       </form>
 
-      <section>
-        <h2>&#1050;&#1072;&#1082; &#1087;&#1086;&#1083;&#1100;&#1079;&#1086;&#1074;&#1072;&#1090;&#1100;&#1089;&#1103;</h2>
-        <ol>
-          <li>&#1054;&#1090;&#1082;&#1088;&#1086;&#1081; <code>chrome://extensions</code>.</li>
-          <li>&#1042;&#1082;&#1083;&#1102;&#1095;&#1080; Developer mode.</li>
-          <li>&#1053;&#1072;&#1078;&#1084;&#1080; Load unpacked &#1080; &#1074;&#1099;&#1073;&#1077;&#1088;&#1080; &#1101;&#1090;&#1091; &#1087;&#1072;&#1087;&#1082;&#1091; extension.</li>
-          <li>&#1054;&#1090;&#1082;&#1088;&#1086;&#1081; YouTube Studio -> &#1057;&#1086;&#1086;&#1073;&#1097;&#1077;&#1089;&#1090;&#1074;&#1086; -> &#1050;&#1086;&#1084;&#1084;&#1077;&#1085;&#1090;&#1072;&#1088;&#1080;&#1080;.</li>
-          <li>&#1046;&#1084;&#1080; <code>&#1054;&#1090;&#1074;&#1077;&#1090;&#1080;&#1090;&#1100;</code> &#1080;&#1083;&#1080; &#1082;&#1085;&#1086;&#1087;&#1082;&#1091; <code>AI</code> &#1088;&#1103;&#1076;&#1086;&#1084; &#1089; &#1082;&#1086;&#1084;&#1084;&#1077;&#1085;&#1090;&#1072;&#1088;&#1080;&#1077;&#1084;.</li>
-        </ol>
-      </section>
     </main>
     <script src="options.js"></script>
   </body>

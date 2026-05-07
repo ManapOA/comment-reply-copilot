@@ -7,7 +7,8 @@ const DEFAULT_SETTINGS = {
   brandVoice:
     "Warm, grateful, short, human. Avoid sounding like spam. Never make promises or medical/legal/financial claims.",
   maxWords: 35,
-  replyLanguage: "auto"
+  replyLanguage: "auto",
+  previewLanguage: "browser"
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -42,7 +43,8 @@ async function generateReply(payload) {
       "anthropicModel",
       "brandVoice",
       "maxWords",
-      "replyLanguage"
+      "replyLanguage",
+      "previewLanguage"
     ]))
   };
 
@@ -186,14 +188,16 @@ async function requestAnthropic({ settings, apiKey, payload }) {
 }
 
 function buildPrompt(settings, payload) {
+  const previewLanguage = resolvePreviewLanguage(settings.previewLanguage);
+
   return {
     system: [
       "You help a creator answer high-volume YouTube Studio comments.",
-      "Return only a complete valid JSON object with keys: reply, russian, detectedLanguage, note. No markdown, no code fences, no partial JSON.",
-      "reply: the exact comment reply to publish, in the commenter's language unless replyLanguage says otherwise.",
-      "russian: natural Russian translation/explanation of reply so the creator understands it.",
-      "detectedLanguage: language name in Russian.",
-      "note: brief Russian note if the comment is unclear, sensitive, insulting, or should not be answered.",
+      "Return only a complete valid JSON object with keys: reply, preview, detectedLanguage, note. No markdown, no code fences, no partial JSON.",
+      "reply: the exact comment reply to publish. Use the commenter's language when requested reply language is auto; otherwise use the requested reply language.",
+      `preview: natural translation/explanation of reply in ${previewLanguage} so the creator understands it.`,
+      `detectedLanguage: detected comment language name in ${previewLanguage}.`,
+      `note: brief note in ${previewLanguage} if the comment is unclear, sensitive, insulting, or should not be answered.`,
       "Be kind, concise, specific to the comment, and safe.",
       "If the comment is only emoji, mostly emoji, or a tiny positive reaction, reply with a short matching warm reaction: one short phrase or 1-3 friendly emoji. Do not invent a topic.",
       "If commentStyle is emoji_only, reply must contain only 1-3 friendly emoji and no words. Example reply: '😊🙏'.",
@@ -202,7 +206,8 @@ function buildPrompt(settings, payload) {
       "Do not use hashtags. Do not ask for likes/subscriptions unless the original comment asks about it.",
       `Creator voice: ${settings.brandVoice}`,
       `Maximum reply length: ${Number(settings.maxWords) || DEFAULT_SETTINGS.maxWords} words.`,
-      `Requested reply language: ${settings.replyLanguage || "auto"}.`
+      `Requested reply language: ${settings.replyLanguage || "auto"}.`,
+      `Preview language: ${previewLanguage}.`
     ].join("\n"),
     user: JSON.stringify(
       {
@@ -256,7 +261,7 @@ function parseReplyText(text) {
 
     return {
       reply: cleaned,
-      russian: "Parser could not read the Russian explanation. Review the reply manually.",
+      preview: "Parser could not read the preview. Review the reply manually.",
       detectedLanguage: "Unknown",
       note: ""
     };
@@ -280,7 +285,7 @@ function recoverReplyObject(text) {
 
   return {
     reply,
-    russian: matchJsonStringValue(text, "russian") || reply,
+    preview: matchJsonStringValue(text, "preview") || matchJsonStringValue(text, "russian") || reply,
     detectedLanguage: matchJsonStringValue(text, "detectedLanguage") || "Unknown",
     note: matchJsonStringValue(text, "note") || ""
   };
@@ -291,6 +296,7 @@ function looksLikeBrokenJson(text) {
   return (
     trimmed.startsWith("{") ||
     trimmed.includes('"reply"') ||
+    trimmed.includes('"preview"') ||
     trimmed.includes('"russian"') ||
     trimmed.includes('"detectedLanguage"')
   );
@@ -322,7 +328,7 @@ function matchJsonStringValue(text, key) {
 function normalizeReply(value) {
   return {
     reply: String(value.reply || "").trim(),
-    russian: String(value.russian || "").trim(),
+    preview: String(value.preview || value.russian || "").trim(),
     detectedLanguage: String(value.detectedLanguage || "").trim(),
     note: String(value.note || "").trim()
   };
@@ -334,12 +340,25 @@ function replySchema() {
     additionalProperties: false,
     properties: {
       reply: { type: "string" },
-      russian: { type: "string" },
+      preview: { type: "string" },
       detectedLanguage: { type: "string" },
       note: { type: "string" }
     },
-    required: ["reply", "russian", "detectedLanguage", "note"]
+    required: ["reply", "preview", "detectedLanguage", "note"]
   };
+}
+
+function resolvePreviewLanguage(value) {
+  if (!value || value === "browser") {
+    const locale = chrome.i18n?.getUILanguage?.() || "en";
+    return `the user's browser language (${locale})`;
+  }
+
+  if (value === "reply") {
+    return "the same language as the reply";
+  }
+
+  return value;
 }
 
 function getProviderApiKey(settings, provider) {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Comment Reply Copilot",
-  "description": "AI reply drafts for YouTube Studio comments with Russian previews.",
+  "name": "TubeReply",
+  "description": "AI reply drafts for YouTube Studio comments with configurable language previews.",
   "version": "1.0.0",
   "permissions": [
     "storage"
@@ -37,7 +37,7 @@
   ],
   "options_page": "src/options.html",
   "action": {
-    "default_title": "Comment Reply Copilot",
+    "default_title": "TubeReply",
     "default_popup": "src/options.html",
     "default_icon": {
       "16": "assets/icon-16.png",

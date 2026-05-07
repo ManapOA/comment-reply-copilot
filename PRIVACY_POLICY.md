@@ -1,21 +1,21 @@
-# Privacy Policy for Comment Reply Copilot
+# Privacy Policy for TubeReply
 
 Last updated: 2026-05-07
 
-Comment Reply Copilot helps YouTube Studio users draft replies to comments using the AI provider selected by the user.
+TubeReply helps YouTube Studio users draft replies to comments using the AI provider selected by the user.
 
 ## Data the extension processes
 
 The extension may process:
 
 - YouTube Studio comment text visible on the page.
-- The user's selected AI provider, model, reply language, and tone settings.
+- The user's selected AI provider, model, interface language, reply language, preview language, and tone settings.
 - API keys entered by the user for OpenAI, Gemini, or Anthropic.
 - Draft reply actions initiated by the user.
 
 ## How data is used
 
-Comment text is sent to the AI provider selected by the user only when the user requests a reply suggestion. The provider returns a draft reply and a Russian preview.
+Comment text is sent to the AI provider selected by the user only when the user requests a reply suggestion. The provider returns a draft reply and a preview in the user's selected preview language.
 
 API keys and settings are stored locally in Chrome storage on the user's device. The extension developer does not operate a separate backend server for this extension.
 

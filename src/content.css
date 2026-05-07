@@ -109,6 +109,10 @@
   margin: 8px 0;
 }
 
+.ccr-error {
+  white-space: pre-wrap;
+}
+
 .ccr-actions {
   display: flex;
   gap: 8px;

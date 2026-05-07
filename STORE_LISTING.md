@@ -2,23 +2,25 @@
 
 ## Name
 
-Comment Reply Copilot
+TubeReply
 
 ## Short description
 
-AI reply drafts for YouTube Studio comments with Russian previews.
+AI reply drafts for YouTube Studio comments with configurable language previews.
 
 ## Detailed description
 
-Comment Reply Copilot helps creators draft replies to high-volume YouTube Studio comments.
+TubeReply helps creators draft replies to high-volume YouTube Studio comments.
 
-The extension adds an AI button near YouTube Studio comment reply controls. When you click it, the extension reads the selected comment, sends it to your chosen AI provider using your own API key, and shows a suggested reply plus a Russian preview so you can understand the response before using it.
+The extension adds an AI button near YouTube Studio comment reply controls. When you click it, the extension reads the selected comment, sends it to your chosen AI provider using your own API key, and shows a suggested reply plus a configurable language preview so you can understand the response before using it.
 
 Features:
 
 - Draft replies for individual YouTube Studio comments.
 - Draft replies for selected comments in bulk.
-- Preview the suggested reply in Russian.
+- Preview the suggested reply in your selected preview language.
+- Switch the settings interface between Russian and English.
+- Choose common models from a list, with a custom model option for new provider releases.
 - Supports OpenAI, Gemini, and Anthropic Claude API keys.
 - Stores provider settings locally in Chrome.
 - Does not publish comments automatically.
@@ -35,13 +37,13 @@ English
 
 ## Single purpose
 
-The extension helps YouTube Studio users draft and insert AI-generated replies to comments, with a Russian-language preview before use.
+The extension helps YouTube Studio users draft and insert AI-generated replies to comments, with a configurable language preview before use.
 
 ## Permission justifications
 
 ### storage
 
-Stores the user's selected AI provider, API key, model name, reply language, and tone settings locally in Chrome.
+Stores the user's selected AI provider, API key, model name, interface language, reply language, preview language, and tone settings locally in Chrome.
 
 ### Host permission: studio.youtube.com
 
@@ -72,7 +74,7 @@ Data is used only to generate reply drafts requested by the user. API keys and s
 3. Select an AI provider and enter a valid API key for that provider.
 4. Open YouTube Studio -> Community -> Comments.
 5. Click `AI` near a comment or click `Reply`.
-6. Confirm that a suggested reply and Russian preview appear.
+6. Confirm that a suggested reply and configured preview appear.
 7. Click `Insert` and confirm that the draft is inserted into the reply field but not published.
 8. Select one or more comments with checkboxes and click `AI selected`.
 9. Confirm that one draft reply is generated and inserted per selected comment.
