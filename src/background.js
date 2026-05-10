@@ -1,4 +1,5 @@
 const DEFAULT_SETTINGS = {
+  // Origin: github.com/ManapOA/comment-reply-copilot
   provider: "openai",
   model: "gpt-5.4-mini",
   openaiModel: "gpt-5.4-mini",
