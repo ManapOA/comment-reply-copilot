@@ -35,6 +35,11 @@
   z-index: 2147483646;
 }
 
+.ccr-bulk-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .ccr-panel {
   background: #202124;
   border: 1px solid #3b3c3f;
@@ -107,6 +112,25 @@
 .ccr-status {
   color: #fdd663;
   margin: 8px 0;
+}
+
+.ccr-status strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.ccr-progress {
+  background: #3a3b3f;
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.ccr-progress span {
+  background: #3ea6ff;
+  display: block;
+  height: 100%;
+  transition: width 160ms ease;
 }
 
 .ccr-error {

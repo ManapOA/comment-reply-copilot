@@ -4,11 +4,17 @@ const BULK_BUTTON_CLASS = "ccr-bulk-button";
 const PANEL_CLASS = "ccr-panel";
 const AI_READY_ATTR = "data-ccr-ai-ready";
 const BUTTON_TEXT = "AI";
+const BULK_BATCH_LIMIT = 10;
+const BULK_GENERATE_PAUSE_MS = 250;
+const DOM_MAINTENANCE_DELAY_MS = 600;
 
 const processed = new WeakSet();
+const bulkProcessed = new WeakSet();
 const suppressedReplyClicks = new WeakSet();
 let activePanel = null;
 let bulkButton = null;
+let maintenanceTimer = 0;
+let bulkInProgress = false;
 
 bootstrap();
 
@@ -19,17 +25,32 @@ function bootstrap() {
   document.addEventListener("click", handleReplyClick, true);
   document.addEventListener("pointerdown", handleOutsidePointerDown, true);
   document.addEventListener("keydown", handleKeyDown, true);
-  document.addEventListener("change", () => window.setTimeout(syncBulkButton, 50), true);
+  document.addEventListener("change", () => scheduleDomMaintenance(), true);
 
-  const observer = new MutationObserver(() => {
-    window.requestAnimationFrame(injectButtons);
-    window.requestAnimationFrame(syncBulkButton);
-  });
+  const observer = new MutationObserver(scheduleDomMaintenance);
 
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true
   });
+}
+
+function scheduleDomMaintenance() {
+  if (maintenanceTimer) {
+    return;
+  }
+
+  maintenanceTimer = window.setTimeout(() => {
+    maintenanceTimer = 0;
+    window.requestAnimationFrame(() => {
+      if (bulkInProgress) {
+        return;
+      }
+
+      injectButtons();
+      syncBulkButton();
+    });
+  }, DOM_MAINTENANCE_DELAY_MS);
 }
 
 function injectButtons() {
@@ -171,7 +192,7 @@ async function suggestForReplyButton(replyButton, anchor) {
         return;
       }
 
-      showPanel(anchor, { result: response.result, commentNode });
+      showPanel(anchor, { result: response.result, commentNode, payload });
     }
   );
 }
@@ -588,7 +609,7 @@ function showPanel(anchor, state) {
       <button type="button" class="ccr-secondary" data-action="settings">${escapeHtml(errorView.button)}</button>
     `;
   } else {
-    panel.innerHTML = renderResult(state.result);
+    panel.innerHTML = renderResult(state.result, state.payload);
   }
 
   document.body.append(panel);
@@ -680,7 +701,10 @@ function getErrorView(error) {
   };
 }
 
-function renderResult(result) {
+function renderResult(result, payload = {}) {
+  const commentPreview = result.commentPreview || result.commentTranslation || result.translatedComment || payload.comment || "";
+  const replyPreview = result.preview || result.russian || "";
+
   return `
     <div class="ccr-top">
       <div>
@@ -689,10 +713,12 @@ function renderResult(result) {
       </div>
       <button type="button" class="ccr-icon" data-action="close">x</button>
     </div>
-    <label class="ccr-label">Публиковать</label>
+    <label class="ccr-label">Комментарий</label>
+    <div class="ccr-box ccr-muted">${escapeHtml(commentPreview)}</div>
+    <label class="ccr-label">Предложенный ответ</label>
     <div class="ccr-box">${escapeHtml(result.reply || "")}</div>
-    <label class="ccr-label">Превью</label>
-    <div class="ccr-box ccr-muted">${escapeHtml(result.preview || result.russian || "")}</div>
+    <label class="ccr-label">Перевод ответа</label>
+    <div class="ccr-box ccr-muted">${escapeHtml(replyPreview)}</div>
     ${result.note ? `<div class="ccr-note">${escapeHtml(result.note)}</div>` : ""}
     <div class="ccr-actions">
       <button type="button" class="ccr-primary" data-action="insert">Вставить</button>
@@ -722,34 +748,86 @@ function syncBulkButton() {
 }
 
 async function generateBulkReplies() {
-  const selected = getSelectedComments();
-  if (!selected.length) {
+  if (bulkInProgress) {
     return;
   }
 
-  showPanel(bulkButton, { loading: true });
-
-  const items = [];
-  for (let index = 0; index < selected.length; index += 1) {
-    const item = selected[index];
-    showPanel(bulkButton, {
-      loading: false,
-      customHtml: `<div class="ccr-status">Готовлю ${index + 1} из ${selected.length}...</div>`
-    });
-
-    try {
-      const result = await sendGenerateMessage(item.payload);
-      items.push({ ...item, result });
-    } catch (error) {
-      items.push({ ...item, error: error.message || String(error) });
-    }
+  const allSelected = getSelectedComments();
+  if (!allSelected.length) {
+    return;
   }
 
-  await insertBulkReplies(items);
-  showBulkResults(items);
+  bulkInProgress = true;
+  bulkButton.disabled = true;
+
+  try {
+    const pendingSelected = allSelected.filter((item) => !bulkProcessed.has(item.commentNode));
+    const sourceItems = pendingSelected.length ? pendingSelected : allSelected;
+    const selected = sourceItems.slice(0, BULK_BATCH_LIMIT);
+    const skippedCount = Math.max(0, sourceItems.length - selected.length);
+    showBulkStatus("Готовлю ответы...", 0, selected.length, skippedCount);
+
+    const items = [];
+    for (let index = 0; index < selected.length; index += 1) {
+      const item = selected[index];
+      updateBulkStatus("Готовлю", index + 1, selected.length, skippedCount);
+
+      try {
+        const result = await sendGenerateMessage(item.payload);
+        items.push({ ...item, result });
+      } catch (error) {
+        items.push({ ...item, error: error.message || String(error) });
+      }
+
+      await pauseBulkWork(BULK_GENERATE_PAUSE_MS);
+    }
+
+    items.forEach((item) => bulkProcessed.add(item.commentNode));
+    showBulkResults(items, skippedCount);
+  } finally {
+    bulkInProgress = false;
+    if (bulkButton) {
+      bulkButton.disabled = false;
+    }
+    scheduleDomMaintenance();
+  }
 }
 
-function showBulkResults(items) {
+function showBulkStatus(title, current, total, skippedCount = 0) {
+  showPanel(bulkButton, {
+    loading: false,
+    customHtml: renderBulkStatus(title, current, total, skippedCount)
+  });
+}
+
+function updateBulkStatus(title, current, total, skippedCount = 0) {
+  const status = activePanel?.querySelector("[data-bulk-status]");
+  if (!status) {
+    showBulkStatus(title, current, total, skippedCount);
+    return;
+  }
+
+  status.innerHTML = renderBulkStatusContent(title, current, total, skippedCount);
+}
+
+function renderBulkStatus(title, current, total, skippedCount = 0) {
+  return `<div class="ccr-status" data-bulk-status>${renderBulkStatusContent(title, current, total, skippedCount)}</div>`;
+}
+
+function renderBulkStatusContent(title, current, total, skippedCount = 0) {
+  const percent = total ? Math.round((Math.min(current, total) / total) * 100) : 0;
+  return `
+    <strong>${escapeHtml(title)} ${Math.min(current, total)} из ${total}</strong>
+    <div class="ccr-progress" aria-hidden="true"><span style="width: ${percent}%"></span></div>
+    ${
+      skippedCount
+        ? `<div class="ccr-note">Чтобы не перегружать вкладку, за один запуск обработано ${total}. Осталось ${skippedCount}: запусти AI selected еще раз.</div>`
+        : ""
+    }
+  `;
+}
+
+function showBulkResults(items, skippedCount = 0) {
   closePanel();
 
   const panel = document.createElement("section");
@@ -759,10 +837,16 @@ function showBulkResults(items) {
     <div class="ccr-top">
       <div>
         <strong>Ответы для выбранных</strong>
-        <span>${items.length} комментариев, вставлено ${countInserted(items)}</span>
+        <span>${items.length} комментариев${skippedCount ? `, пропущено ${skippedCount}` : ""}</span>
       </div>
       <button type="button" class="ccr-icon" data-action="close">x</button>
     </div>
+    <div class="ccr-note">Автовставка в bulk отключена, чтобы YouTube Studio не подвисал. Вставляй нужные ответы кнопкой в карточке.</div>
+    ${
+      skippedCount
+        ? `<div class="ccr-note">Пачка ограничена ${BULK_BATCH_LIMIT} комментариями, чтобы YouTube Studio не подвисал. Следующий запуск продолжит с еще не обработанных выбранных комментариев.</div>`
+        : ""
+    }
     <div class="ccr-bulk-list">
       ${items.map(renderBulkItem).join("")}
     </div>
@@ -803,6 +887,14 @@ function showBulkResults(items) {
 
 function renderBulkItem(item, index) {
   const title = item.payload.author || `Комментарий ${index + 1}`;
+  const commentPreview =
+    item.result?.commentPreview ||
+    item.result?.commentTranslation ||
+    item.result?.translatedComment ||
+    item.payload.comment ||
+    "";
+  const replyPreview = item.result?.preview || item.result?.russian || "";
+
   if (item.error) {
     return `
       <article class="ccr-bulk-item" data-index="${index}">
@@ -816,9 +908,12 @@ function renderBulkItem(item, index) {
   return `
     <article class="ccr-bulk-item" data-index="${index}">
       <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(item.payload.comment)}</p>
+      <label class="ccr-label">Комментарий</label>
+      <div class="ccr-box ccr-muted">${escapeHtml(commentPreview)}</div>
+      <label class="ccr-label">Предложенный ответ</label>
       <div class="ccr-box">${escapeHtml(item.result.reply)}</div>
-      <div class="ccr-box ccr-muted">${escapeHtml(item.result.preview || item.result.russian || "")}</div>
+      <label class="ccr-label">Перевод ответа</label>
+      <div class="ccr-box ccr-muted">${escapeHtml(replyPreview)}</div>
       ${item.inserted ? `<div class="ccr-note">Вставлено в поле ответа.</div>` : ""}
       <div class="ccr-actions">
         <button type="button" class="ccr-primary" data-action="bulk-insert">Вставить</button>
@@ -882,16 +977,6 @@ function openReplyAndInsert(item) {
     item.replyButton.click();
   }
   window.setTimeout(() => insertReply(item.result.reply, item.commentNode), 300);
-}
-
-async function openReplyAndInsertAsync(item) {
-  if (item.replyButton) {
-    suppressedReplyClicks.add(item.replyButton);
-    item.replyButton.click();
-    await delay(350);
-  }
-
-  insertReply(item.result.reply, item.commentNode);
 }
 
 function findEditor(commentNode) {
@@ -1040,38 +1125,13 @@ function isSelectionToolbarPayload(payload) {
   );
 }
 
-async function insertBulkReplies(items) {
-  const successful = items.filter((item) => item.result?.reply && !item.error && !looksLikeJsonFragment(item.result.reply));
-  for (let index = 0; index < successful.length; index += 1) {
-    const item = successful[index];
-    showPanel(bulkButton, {
-      loading: false,
-      customHtml: `<div class="ccr-status">Вставляю ${index + 1} из ${successful.length}...</div>`
-    });
-
-    try {
-      await openReplyAndInsertAsync(item);
-      item.inserted = true;
-    } catch (error) {
-      item.inserted = false;
-      item.error = error.message || String(error);
-    }
-
-    await delay(120);
-  }
-}
-
-function looksLikeJsonFragment(value) {
-  const text = String(value || "").trim();
-  return text.startsWith("{") || text.includes('"reply"') || text.includes('"preview"') || text.includes('"russian"');
-}
-
-function countInserted(items) {
-  return items.filter((item) => item.inserted).length;
-}
-
 function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pauseBulkWork(ms) {
+  await delay(ms);
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
 }
 
 function sendGenerateMessage(payload) {

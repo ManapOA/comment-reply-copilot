@@ -194,7 +194,8 @@ function buildPrompt(settings, payload) {
   return {
     system: [
       "You help a creator answer high-volume YouTube Studio comments.",
-      "Return only a complete valid JSON object with keys: reply, preview, detectedLanguage, note. No markdown, no code fences, no partial JSON.",
+      "Return only a complete valid JSON object with keys: commentPreview, reply, preview, detectedLanguage, note. No markdown, no code fences, no partial JSON.",
+      `commentPreview: natural translation/explanation of the user's original comment in ${previewLanguage}.`,
       "reply: the exact comment reply to publish. Use the commenter's language when requested reply language is auto; otherwise use the requested reply language.",
       `preview: natural translation/explanation of reply in ${previewLanguage} so the creator understands it.`,
       `detectedLanguage: detected comment language name in ${previewLanguage}.`,
@@ -262,6 +263,7 @@ function parseReplyText(text) {
 
     return {
       reply: cleaned,
+      commentPreview: "",
       preview: "Parser could not read the preview. Review the reply manually.",
       detectedLanguage: "Unknown",
       note: ""
@@ -286,6 +288,11 @@ function recoverReplyObject(text) {
 
   return {
     reply,
+    commentPreview:
+      matchJsonStringValue(text, "commentPreview") ||
+      matchJsonStringValue(text, "commentTranslation") ||
+      matchJsonStringValue(text, "translatedComment") ||
+      "",
     preview: matchJsonStringValue(text, "preview") || matchJsonStringValue(text, "russian") || reply,
     detectedLanguage: matchJsonStringValue(text, "detectedLanguage") || "Unknown",
     note: matchJsonStringValue(text, "note") || ""
@@ -297,6 +304,7 @@ function looksLikeBrokenJson(text) {
   return (
     trimmed.startsWith("{") ||
     trimmed.includes('"reply"') ||
+    trimmed.includes('"commentPreview"') ||
     trimmed.includes('"preview"') ||
     trimmed.includes('"russian"') ||
     trimmed.includes('"detectedLanguage"')
@@ -329,6 +337,7 @@ function matchJsonStringValue(text, key) {
 function normalizeReply(value) {
   return {
     reply: String(value.reply || "").trim(),
+    commentPreview: String(value.commentPreview || value.commentTranslation || value.translatedComment || "").trim(),
     preview: String(value.preview || value.russian || "").trim(),
     detectedLanguage: String(value.detectedLanguage || "").trim(),
     note: String(value.note || "").trim()
@@ -340,12 +349,13 @@ function replySchema() {
     type: "object",
     additionalProperties: false,
     properties: {
+      commentPreview: { type: "string" },
       reply: { type: "string" },
       preview: { type: "string" },
       detectedLanguage: { type: "string" },
       note: { type: "string" }
     },
-    required: ["reply", "preview", "detectedLanguage", "note"]
+    required: ["commentPreview", "reply", "preview", "detectedLanguage", "note"]
   };
 }
 
