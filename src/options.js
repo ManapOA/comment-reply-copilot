@@ -4,6 +4,8 @@ const DEFAULTS = {
   openaiModel: "gpt-5.4-mini",
   geminiModel: "gemini-2.5-flash",
   anthropicModel: "claude-sonnet-4-20250514",
+  groqModel: "llama-3.1-8b-instant",
+  openrouterModel: "google/gemini-2.5-flash-lite",
   brandVoice:
     "Warm, grateful, short, human. Avoid sounding like spam. Never make promises or medical/legal/financial claims.",
   maxWords: 35,
@@ -98,6 +100,19 @@ const MODEL_OPTIONS = {
     ["claude-opus-4-20250514", "Claude Opus 4 - smarter"],
     ["claude-3-7-sonnet-20250219", "Claude Sonnet 3.7 - fallback"],
     ["claude-3-5-haiku-20241022", "Claude Haiku 3.5 - fastest"]
+  ],
+  groq: [
+    ["llama-3.1-8b-instant", "Llama 3.1 8B Instant - fastest/free"],
+    ["llama-3.3-70b-versatile", "Llama 3.3 70B Versatile - smarter"],
+    ["qwen/qwen3-32b", "Qwen 3 32B - multilingual"],
+    ["meta-llama/llama-4-scout-17b-16e-instruct", "Llama 4 Scout - multilingual"]
+  ],
+  openrouter: [
+    ["google/gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite - cheap"],
+    ["google/gemini-2.5-flash-lite:free", "Gemini 2.5 Flash-Lite :free"],
+    ["meta-llama/llama-3.1-8b-instruct:free", "Llama 3.1 8B :free"],
+    ["qwen/qwen-2.5-7b-instruct:free", "Qwen 2.5 7B :free"],
+    ["deepseek/deepseek-chat-v3.1:free", "DeepSeek Chat :free"]
   ]
 };
 
@@ -157,6 +172,8 @@ form.addEventListener("submit", async (event) => {
   const openaiModel = getSelectedModel("openai") || DEFAULTS.openaiModel;
   const geminiModel = getSelectedModel("gemini") || DEFAULTS.geminiModel;
   const anthropicModel = getSelectedModel("anthropic") || DEFAULTS.anthropicModel;
+  const groqModel = getSelectedModel("groq") || DEFAULTS.groqModel;
+  const openrouterModel = getSelectedModel("openrouter") || DEFAULTS.openrouterModel;
 
   await chrome.storage.local.set({
     provider: provider.value,
@@ -164,10 +181,14 @@ form.addEventListener("submit", async (event) => {
     openaiApiKey: document.querySelector("#openaiApiKey").value.trim(),
     geminiApiKey: document.querySelector("#geminiApiKey").value.trim(),
     anthropicApiKey: document.querySelector("#anthropicApiKey").value.trim(),
+    groqApiKey: document.querySelector("#groqApiKey").value.trim(),
+    openrouterApiKey: document.querySelector("#openrouterApiKey").value.trim(),
     model: openaiModel,
     openaiModel,
     geminiModel,
     anthropicModel,
+    groqModel,
+    openrouterModel,
     brandVoice: document.querySelector("#brandVoice").value.trim() || DEFAULTS.brandVoice,
     maxWords: Number(document.querySelector("#maxWords").value) || DEFAULTS.maxWords,
     replyLanguage: replyLanguage.value || DEFAULTS.replyLanguage,
@@ -189,11 +210,15 @@ async function restore() {
       "openaiApiKey",
       "geminiApiKey",
       "anthropicApiKey",
+      "groqApiKey",
+      "openrouterApiKey",
       "provider",
       "model",
       "openaiModel",
       "geminiModel",
       "anthropicModel",
+      "groqModel",
+      "openrouterModel",
       "brandVoice",
       "maxWords",
       "replyLanguage",
@@ -208,9 +233,13 @@ async function restore() {
   document.querySelector("#openaiApiKey").value = values.openaiApiKey || values.apiKey || "";
   document.querySelector("#geminiApiKey").value = values.geminiApiKey || "";
   document.querySelector("#anthropicApiKey").value = values.anthropicApiKey || "";
+  document.querySelector("#groqApiKey").value = values.groqApiKey || "";
+  document.querySelector("#openrouterApiKey").value = values.openrouterApiKey || "";
   setModelControl("openai", values.openaiModel || values.model || DEFAULTS.openaiModel);
   setModelControl("gemini", values.geminiModel || DEFAULTS.geminiModel);
   setModelControl("anthropic", values.anthropicModel || DEFAULTS.anthropicModel);
+  setModelControl("groq", values.groqModel || DEFAULTS.groqModel);
+  setModelControl("openrouter", values.openrouterModel || DEFAULTS.openrouterModel);
   document.querySelector("#brandVoice").value = values.brandVoice;
   document.querySelector("#maxWords").value = values.maxWords;
   replyLanguage.value = values.replyLanguage;

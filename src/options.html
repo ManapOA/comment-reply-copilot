@@ -26,6 +26,8 @@
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
             <option value="anthropic">Anthropic Claude</option>
+            <option value="groq">Groq</option>
+            <option value="openrouter">OpenRouter</option>
           </select>
         </label>
 
@@ -71,6 +73,36 @@
           <label class="custom-model" data-custom-model="anthropic" hidden>
             Custom Anthropic model
             <input id="anthropicCustomModel" type="text" placeholder="claude-sonnet-4-20250514">
+          </label>
+        </div>
+
+        <div class="provider-card" data-provider-card="groq">
+          <label>
+            Groq API key
+            <input id="groqApiKey" type="password" autocomplete="off" placeholder="gsk_...">
+          </label>
+          <label>
+            Groq model
+            <select id="groqModel" data-model-select="groq"></select>
+          </label>
+          <label class="custom-model" data-custom-model="groq" hidden>
+            Custom Groq model
+            <input id="groqCustomModel" type="text" placeholder="llama-3.1-8b-instant">
+          </label>
+        </div>
+
+        <div class="provider-card" data-provider-card="openrouter">
+          <label>
+            OpenRouter API key
+            <input id="openrouterApiKey" type="password" autocomplete="off" placeholder="sk-or-...">
+          </label>
+          <label>
+            OpenRouter model
+            <select id="openrouterModel" data-model-select="openrouter"></select>
+          </label>
+          <label class="custom-model" data-custom-model="openrouter" hidden>
+            Custom OpenRouter model
+            <input id="openrouterCustomModel" type="text" placeholder="google/gemini-2.5-flash-lite">
           </label>
         </div>
 

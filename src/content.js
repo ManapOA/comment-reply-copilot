@@ -1,33 +1,38 @@
 const ROOT_CLASS = "ccr-root";
-const AI_BUTTON_CLASS = "ccr-ai-button";
 const BULK_BUTTON_CLASS = "ccr-bulk-button";
 const PANEL_CLASS = "ccr-panel";
-const AI_READY_ATTR = "data-ccr-ai-ready";
-const BUTTON_TEXT = "AI";
 const BULK_BATCH_LIMIT = 10;
 const BULK_GENERATE_PAUSE_MS = 250;
-const DOM_MAINTENANCE_DELAY_MS = 600;
+const BULK_SYNC_DELAY_MS = 120;
+const PREVIEW_REWRITE_DELAY_MS = 900;
 
-const processed = new WeakSet();
 const bulkProcessed = new WeakSet();
 const suppressedReplyClicks = new WeakSet();
 let activePanel = null;
 let bulkButton = null;
-let maintenanceTimer = 0;
+let bulkSyncTimer = 0;
 let bulkInProgress = false;
+let previewRewriteTimer = 0;
+let previewRewriteSequence = 0;
 
 bootstrap();
 
 function bootstrap() {
-  cleanupDuplicateAiButtons();
-  injectButtons();
+  removeAiButtons();
   syncBulkButton();
   document.addEventListener("click", handleReplyClick, true);
+  document.addEventListener("click", scheduleBulkButtonSync, true);
   document.addEventListener("pointerdown", handleOutsidePointerDown, true);
   document.addEventListener("keydown", handleKeyDown, true);
-  document.addEventListener("change", () => scheduleDomMaintenance(), true);
+  document.addEventListener("change", scheduleBulkButtonSync, true);
 
-  const observer = new MutationObserver(scheduleDomMaintenance);
+  const observer = new MutationObserver((mutations) => {
+    if (bulkInProgress || !hasRelevantAddedNodes(mutations)) {
+      return;
+    }
+
+    scheduleBulkButtonSync();
+  });
 
   observer.observe(document.documentElement, {
     childList: true,
@@ -35,94 +40,76 @@ function bootstrap() {
   });
 }
 
-function scheduleDomMaintenance() {
-  if (maintenanceTimer) {
+function scheduleBulkButtonSync() {
+  if (bulkSyncTimer || bulkInProgress) {
     return;
   }
 
-  maintenanceTimer = window.setTimeout(() => {
-    maintenanceTimer = 0;
-    window.requestAnimationFrame(() => {
-      if (bulkInProgress) {
-        return;
+  bulkSyncTimer = window.setTimeout(() => {
+    bulkSyncTimer = 0;
+    runWhenIdle(() => {
+      if (!bulkInProgress) {
+        syncBulkButton();
+      }
+    }, 500);
+  }, BULK_SYNC_DELAY_MS);
+}
+
+function runWhenIdle(callback, timeout = 1500) {
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(callback, { timeout });
+    return;
+  }
+
+  window.requestAnimationFrame(callback);
+}
+
+function hasRelevantAddedNodes(mutations) {
+  let inspected = 0;
+
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (inspected > 20) {
+        return true;
       }
 
-      injectButtons();
-      syncBulkButton();
-    });
-  }, DOM_MAINTENANCE_DELAY_MS);
-}
-
-function injectButtons() {
-  cleanupDuplicateAiButtons();
-
-  for (const button of findReplyButtons()) {
-    if (processed.has(button)) {
-      continue;
-    }
-
-    const commentNode = findCommentContainer(button);
-    const existingInRow = findAiButtonsNear(button);
-    const commentHasAi = Boolean(commentNode?.querySelector(`.${AI_BUTTON_CLASS}`));
-    if (existingInRow.length || (commentNode?.getAttribute(AI_READY_ATTR) === "true" && commentHasAi)) {
-      commentNode?.setAttribute(AI_READY_ATTR, "true");
-      processed.add(button);
-      continue;
-    }
-
-    processed.add(button);
-    commentNode?.setAttribute(AI_READY_ATTR, "true");
-    const aiButton = document.createElement("button");
-    aiButton.type = "button";
-    aiButton.className = AI_BUTTON_CLASS;
-    aiButton.textContent = BUTTON_TEXT;
-    aiButton.title = "Suggest a bilingual reply";
-    aiButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      suggestForReplyButton(button, aiButton);
-    });
-
-    button.insertAdjacentElement("afterend", aiButton);
-  }
-
-  cleanupDuplicateAiButtons();
-}
-
-function findReplyButtons() {
-  const candidates = [
-    ...document.querySelectorAll("ytcp-button, tp-yt-paper-button, button, [role='button']")
-  ];
-
-  const byComment = new Map();
-  const buttons = candidates
-    .filter((element) => !element.classList.contains(AI_BUTTON_CLASS))
-    .map((element) => canonicalReplyButton(element))
-    .filter(Boolean)
-    .filter((element) => {
-      const text = visibleText(element).toLowerCase();
-      return text === "ответить" || text === "reply" || text === "responder";
-    });
-
-  for (const button of buttons) {
-    const commentNode = findCommentContainer(button);
-    if (!commentNode) {
-      continue;
-    }
-
-    if (!byComment.has(commentNode)) {
-      byComment.set(commentNode, button);
+      inspected += 1;
+      if (isRelevantAddedNode(node)) {
+        return true;
+      }
     }
   }
 
-  return [...byComment.values()];
+  return false;
+}
+
+function isRelevantAddedNode(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return false;
+  }
+
+  const element = node;
+  if (element.closest?.(`.${ROOT_CLASS}, .${BULK_BUTTON_CLASS}`)) {
+    return false;
+  }
+
+  const name = element.localName || "";
+  if (name.includes("comment") || name === "ytcp-button" || name === "tp-yt-paper-button") {
+    return true;
+  }
+
+  return Boolean(
+    element.querySelector?.(
+      "ytcp-comment, ytcp-comment-thread, ytcp-button, tp-yt-paper-button"
+    )
+  );
 }
 
 function handleReplyClick(event) {
   const button = canonicalReplyButton(
     event.target.closest("ytcp-button, tp-yt-paper-button, button, [role='button']")
   );
-  if (!button || button.classList.contains(AI_BUTTON_CLASS)) {
+  if (!button) {
     return;
   }
 
@@ -133,6 +120,12 @@ function handleReplyClick(event) {
 
   const text = visibleText(button).toLowerCase();
   if (text !== "ответить" && text !== "reply" && text !== "responder") {
+    return;
+  }
+
+  const commentNode = findCommentContainer(button);
+  const payload = extractCommentPayload(commentNode);
+  if (!payload.comment || payload.commentStyle === "emoji_only") {
     return;
   }
 
@@ -147,7 +140,6 @@ function handleOutsidePointerDown(event) {
   const target = event.target;
   if (
     activePanel.contains(target) ||
-    target.closest?.(`.${AI_BUTTON_CLASS}`) ||
     target.closest?.(`.${BULK_BUTTON_CLASS}`)
   ) {
     return;
@@ -170,6 +162,14 @@ async function suggestForReplyButton(replyButton, anchor) {
     showPanel(anchor, {
       loading: false,
       error: "Не удалось прочитать текст комментария. Попробуй кнопку AI рядом с нужным комментарием."
+    });
+    return;
+  }
+
+  if (payload.commentStyle === "emoji_only") {
+    showPanel(anchor, {
+      loading: false,
+      error: "Комментарий состоит только из эмодзи. Я пропускаю такие комментарии, чтобы не выдумывать смысл."
     });
     return;
   }
@@ -222,13 +222,14 @@ function findCommentContainer(start) {
 
 function extractCommentPayload(commentNode) {
   const text = removeExtensionText(rawText(commentNode));
+  const emojiOnlyComment = extractEmojiImageComment(commentNode) || extractEmojiOnlyComment(commentNode);
   const lines = normalizeCommentLines(text);
   const visualComment = extractVisualComment(commentNode);
 
   const authorLine = lines.find((line) => line.startsWith("@")) || "";
   const author = authorLine.match(/^@\S+/)?.[0] || "";
   const denseComment = authorLine ? extractCommentFromAuthorLine(authorLine) : "";
-  const comment = visualComment || denseComment || pickCommentLine(lines, author);
+  const comment = emojiOnlyComment || visualComment || denseComment || pickCommentLine(lines, author);
   const commentStyle = detectCommentStyle(comment);
 
   return {
@@ -236,8 +237,61 @@ function extractCommentPayload(commentNode) {
     comment,
     commentStyle,
     context: buildSafeContext(lines, comment),
-    pageTitle: document.title
+    pageTitle: document.title,
+    videoTitle: extractVideoTitle(lines, comment, author),
+    videoContext: extractVideoContext(lines, comment, author)
   };
+}
+
+function extractEmojiImageComment(commentNode) {
+  const contentText = commentNode.querySelector?.("#content-text, ytcp-comment #content-text");
+  if (!contentText || !isVisible(contentText)) {
+    return "";
+  }
+
+  const textWithoutImages = Array.from(contentText.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent || "")
+    .join("")
+    .trim();
+
+  if (textWithoutImages) {
+    return "";
+  }
+
+  const emojiText = [...contentText.querySelectorAll("img.emoji[alt], img[alt]")]
+    .map((image) => image.getAttribute("alt") || "")
+    .join("")
+    .trim();
+
+  return isEmojiOnlyText(emojiText) ? emojiText : "";
+}
+
+function extractEmojiOnlyComment(commentNode) {
+  const replyButton = findReplyButtonInside(commentNode);
+  const authorElement = findAuthorElement(commentNode);
+  const candidates = [];
+
+  for (const element of commentNode.querySelectorAll("*")) {
+    if (!isVisible(element) || isInsideIgnoredArea(element) || element === replyButton || element.contains(replyButton)) {
+      continue;
+    }
+
+    if (authorElement && isElementBefore(element, authorElement)) {
+      continue;
+    }
+
+    if (replyButton && isElementAfter(element, replyButton)) {
+      continue;
+    }
+
+    const text = visibleText(element);
+    if (isEmojiOnlyText(text)) {
+      candidates.push(text);
+    }
+  }
+
+  return candidates.sort((a, b) => b.length - a.length)[0] || "";
 }
 
 function normalizeCommentLines(text) {
@@ -390,6 +444,60 @@ function buildSafeContext(lines, comment) {
     .join("\n");
 }
 
+function extractVideoTitle(lines, comment, author) {
+  const candidates = extractVideoContextLines(lines, comment, author);
+  return candidates[0] || cleanPageTitle(document.title);
+}
+
+function extractVideoContext(lines, comment, author) {
+  return extractVideoContextLines(lines, comment, author).slice(0, 3).join("\n");
+}
+
+function extractVideoContextLines(lines, comment, author) {
+  const ignored = new Set([author, comment]);
+  const seen = new Set();
+
+  return lines
+    .map((line) => line.trim())
+    .filter((line) => {
+      const normalized = line.toLowerCase();
+      if (
+        !line ||
+        ignored.has(line) ||
+        line.startsWith("@") ||
+        isUiLine(line) ||
+        looksLikeMetaLine(line) ||
+        isEditorText(line) ||
+        normalized.includes("выбрано") ||
+        normalized.includes("select all") ||
+        normalized.includes("published") ||
+        normalized.includes("опубликованные")
+      ) {
+        return false;
+      }
+
+      if (seen.has(normalized) || line.length < 8 || line.length > 180) {
+        return false;
+      }
+
+      seen.add(normalized);
+      return true;
+    });
+}
+
+function cleanPageTitle(title) {
+  const cleaned = String(title || "")
+    .replace(/\s*-\s*YouTube Studio\s*$/i, "")
+    .replace(/\s*-\s*YouTube\s*$/i, "")
+    .trim();
+
+  if (!cleaned || /^comments?$/i.test(cleaned) || /^комментарии$/i.test(cleaned)) {
+    return "";
+  }
+
+  return cleaned;
+}
+
 function pickCommentLine(lines, author) {
   const ignored = new Set([author]);
   return (
@@ -436,7 +544,7 @@ function isUiLine(line) {
 }
 
 function canonicalReplyButton(element) {
-  if (!element || element.classList?.contains(AI_BUTTON_CLASS)) {
+  if (!element) {
     return null;
   }
 
@@ -444,64 +552,8 @@ function canonicalReplyButton(element) {
   return outer || element;
 }
 
-function cleanupDuplicateAiButtons() {
-  cleanupDetachedAiButtons();
-
-  for (const button of findRawReplyButtons()) {
-    const nearby = findAiButtonsNear(button);
-    nearby.slice(1).forEach((aiButton) => aiButton.remove());
-  }
-
-  const byComment = new Map();
-  for (const aiButton of document.querySelectorAll(`.${AI_BUTTON_CLASS}`)) {
-    const commentNode = findCommentContainer(aiButton);
-    if (!commentNode) {
-      continue;
-    }
-
-    if (!byComment.has(commentNode)) {
-      byComment.set(commentNode, aiButton);
-      commentNode.setAttribute(AI_READY_ATTR, "true");
-      continue;
-    }
-
-    aiButton.remove();
-  }
-}
-
-function cleanupDetachedAiButtons() {
-  for (const aiButton of document.querySelectorAll(`.${AI_BUTTON_CLASS}`)) {
-    const parentText = visibleText(aiButton.parentElement || document.body).toLowerCase();
-    if (!parentText.includes("ответить") && !parentText.includes("reply") && !parentText.includes("responder")) {
-      aiButton.remove();
-    }
-  }
-}
-
-function findAiButtonsNear(replyButton) {
-  const parent = replyButton?.parentElement;
-  if (!parent) {
-    return [];
-  }
-
-  return [...parent.querySelectorAll(`.${AI_BUTTON_CLASS}`)];
-}
-
-function findRawReplyButtons() {
-  return [
-    ...new Set(
-      [
-        ...document.querySelectorAll("ytcp-button, tp-yt-paper-button, button, [role='button']")
-      ]
-        .filter((element) => !element.classList.contains(AI_BUTTON_CLASS))
-        .map((element) => canonicalReplyButton(element))
-        .filter(Boolean)
-        .filter((element) => {
-          const text = visibleText(element).toLowerCase();
-          return text === "ответить" || text === "reply" || text === "responder";
-        })
-    )
-  ];
+function removeAiButtons() {
+  document.querySelectorAll(".ccr-ai-button").forEach((button) => button.remove());
 }
 
 function scoreCommentContainer(element, text) {
@@ -587,6 +639,10 @@ function detectCommentStyle(comment) {
   return "text";
 }
 
+function isEmojiOnlyText(value) {
+  return detectCommentStyle(String(value || "")) === "emoji_only";
+}
+
 function showPanel(anchor, state) {
   closePanel();
 
@@ -638,7 +694,7 @@ function showPanel(anchor, state) {
     }
 
     if (action === "settings") {
-      chrome.runtime.openOptionsPage();
+      openExtensionSettings();
     }
 
     if (action === "bulk-copy") {
@@ -657,6 +713,12 @@ function showPanel(anchor, state) {
         openReplyAndInsert(item);
         flash(event.target, "Вставлено");
       }
+    }
+  });
+
+  panel.addEventListener("input", (event) => {
+    if (event.target.matches("[data-role='reply-preview-editor']")) {
+      schedulePreviewRewrite(panel, state, event.target.value);
     }
   });
 }
@@ -716,15 +778,93 @@ function renderResult(result, payload = {}) {
     <label class="ccr-label">Комментарий</label>
     <div class="ccr-box ccr-muted">${escapeHtml(commentPreview)}</div>
     <label class="ccr-label">Предложенный ответ</label>
-    <div class="ccr-box">${escapeHtml(result.reply || "")}</div>
-    <label class="ccr-label">Перевод ответа</label>
-    <div class="ccr-box ccr-muted">${escapeHtml(replyPreview)}</div>
+    <div class="ccr-box" data-role="reply-output">${escapeHtml(result.reply || "")}</div>
+    <label class="ccr-label">Перевод ответа / ручная правка</label>
+    <textarea class="ccr-box ccr-editor" data-role="reply-preview-editor" rows="3" placeholder="Отредактируй этот текст на русском или напиши свой ответ. Предложенный ответ обновится автоматически.">${escapeHtml(replyPreview)}</textarea>
+    <div class="ccr-rewrite-status" data-role="rewrite-status"></div>
     ${result.note ? `<div class="ccr-note">${escapeHtml(result.note)}</div>` : ""}
     <div class="ccr-actions">
       <button type="button" class="ccr-primary" data-action="insert">Вставить</button>
       <button type="button" class="ccr-secondary" data-action="copy">Копировать</button>
     </div>
   `;
+}
+
+function schedulePreviewRewrite(panel, state, editedPreview) {
+  window.clearTimeout(previewRewriteTimer);
+  setRewriteStatus(panel, "Жду паузу в редактировании...");
+
+  previewRewriteTimer = window.setTimeout(() => {
+    rewriteFromPreview(panel, state, editedPreview);
+  }, PREVIEW_REWRITE_DELAY_MS);
+}
+
+async function rewriteFromPreview(panel, state, editedPreview) {
+  const trimmed = editedPreview.trim();
+  if (!trimmed || !state?.result || !state?.payload) {
+    setRewriteStatus(panel, "");
+    return;
+  }
+
+  if (isEmojiOnlyText(trimmed)) {
+    state.result.reply = trimmed;
+    state.result.preview = trimmed;
+
+    const replyOutput = panel.querySelector("[data-role='reply-output']");
+    if (replyOutput) {
+      replyOutput.textContent = trimmed;
+    }
+
+    setRewriteStatus(panel, "Эмодзи сохранены без перевода.");
+    return;
+  }
+
+  const sequence = (previewRewriteSequence += 1);
+  const insertButton = panel.querySelector("[data-action='insert']");
+  const copyButton = panel.querySelector("[data-action='copy']");
+  insertButton?.setAttribute("disabled", "true");
+  copyButton?.setAttribute("disabled", "true");
+  setRewriteStatus(panel, "Обновляю предложенный ответ...");
+
+  try {
+    const rewrite = await sendRewriteMessage({
+      ...state.payload,
+      commentPreview: state.result.commentPreview || state.payload.comment || "",
+      currentReply: state.result.reply || "",
+      editedPreview: trimmed,
+      detectedLanguage: state.result.detectedLanguage || ""
+    });
+
+    if (sequence !== previewRewriteSequence || !activePanel?.contains(panel)) {
+      return;
+    }
+
+    state.result.reply = rewrite.reply || state.result.reply || "";
+    state.result.preview = trimmed;
+
+    const replyOutput = panel.querySelector("[data-role='reply-output']");
+    if (replyOutput) {
+      replyOutput.textContent = state.result.reply;
+    }
+
+    setRewriteStatus(panel, "Предложенный ответ обновлен.");
+  } catch (error) {
+    if (sequence === previewRewriteSequence) {
+      setRewriteStatus(panel, error.message || "Не удалось обновить ответ.");
+    }
+  } finally {
+    if (sequence === previewRewriteSequence) {
+      insertButton?.removeAttribute("disabled");
+      copyButton?.removeAttribute("disabled");
+    }
+  }
+}
+
+function setRewriteStatus(panel, text) {
+  const status = panel.querySelector("[data-role='rewrite-status']");
+  if (status) {
+    status.textContent = text;
+  }
 }
 
 function syncBulkButton() {
@@ -789,7 +929,7 @@ async function generateBulkReplies() {
     if (bulkButton) {
       bulkButton.disabled = false;
     }
-    scheduleDomMaintenance();
+    scheduleBulkButtonSync();
   }
 }
 
@@ -995,6 +1135,8 @@ function findEditor(commentNode) {
 }
 
 function closePanel() {
+  window.clearTimeout(previewRewriteTimer);
+  previewRewriteSequence += 1;
   activePanel?.remove();
   activePanel = null;
 }
@@ -1026,6 +1168,10 @@ function getSelectedComments() {
 
     const payload = extractCommentPayload(commentNode);
     if (!payload.comment || isSelectionToolbarPayload(payload)) {
+      continue;
+    }
+
+    if (payload.commentStyle === "emoji_only") {
       continue;
     }
 
@@ -1093,7 +1239,7 @@ function findReplyButtonInside(root) {
 
   return (
     candidates
-      .filter((element) => !element.classList.contains(AI_BUTTON_CLASS))
+      .filter((element) => !element.classList.contains("ccr-ai-button"))
       .map((element) => canonicalReplyButton(element))
       .filter(Boolean)
       .find((button) => {
@@ -1149,6 +1295,32 @@ function sendGenerateMessage(payload) {
 
       resolve(response.result);
     });
+  });
+}
+
+function sendRewriteMessage(payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "CCR_REWRITE_REPLY", payload }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!response?.ok) {
+        reject(new Error(response?.error || "Не удалось обновить ответ."));
+        return;
+      }
+
+      resolve(response.result);
+    });
+  });
+}
+
+function openExtensionSettings() {
+  chrome.runtime.sendMessage({ type: "CCR_OPEN_OPTIONS" }, (response) => {
+    if (chrome.runtime.lastError || !response?.ok) {
+      window.open(chrome.runtime.getURL("src/options.html"), "_blank", "noopener");
+    }
   });
 }
 
