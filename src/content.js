@@ -130,6 +130,10 @@ function handleReplyClick(event) {
   }
 
   const commentNode = findCommentContainer(button);
+  if (isSubmitReplyButton(button) || hasOpenReplyEditor(commentNode)) {
+    return;
+  }
+
   const payload = extractCommentPayload(commentNode);
   if (!payload.comment || payload.commentStyle === "emoji_only") {
     return;
@@ -476,6 +480,26 @@ function isEditorText(text) {
     normalized === "reply" ||
     normalized === "add a reply"
   );
+}
+
+function isSubmitReplyButton(button) {
+  return Boolean(
+    button.closest?.(
+      "ytcp-commentbox, ytcp-commentbox-lit, ytcp-comment-reply-dialog, ytcp-comment-reply, #reply-dialog"
+    )
+  );
+}
+
+function hasOpenReplyEditor(commentNode) {
+  if (!commentNode) {
+    return false;
+  }
+
+  const editor = commentNode.querySelector?.(
+    "textarea, input[type='text'], [contenteditable='true'], #textarea, ytcp-commentbox, ytcp-commentbox-lit"
+  );
+
+  return Boolean(editor && isVisible(editor));
 }
 
 function isInsideIgnoredArea(element) {
