@@ -5,6 +5,7 @@ const BULK_BATCH_LIMIT = 10;
 const BULK_GENERATE_PAUSE_MS = 250;
 const BULK_SYNC_DELAY_MS = 120;
 const PREVIEW_REWRITE_DELAY_MS = 900;
+const PANEL_POSITION_KEY = "ccrPanelPosition";
 
 const bulkProcessed = new WeakSet();
 const suppressedReplyClicks = new WeakSet();
@@ -14,6 +15,7 @@ let bulkSyncTimer = 0;
 let bulkInProgress = false;
 let previewRewriteTimer = 0;
 let previewRewriteSequence = 0;
+let panelDragState = null;
 
 bootstrap();
 
@@ -23,6 +25,10 @@ function bootstrap() {
   document.addEventListener("click", handleReplyClick, true);
   document.addEventListener("click", scheduleBulkButtonSync, true);
   document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+  document.addEventListener("pointerdown", handlePanelDragStart, true);
+  document.addEventListener("pointermove", handlePanelDragMove, true);
+  document.addEventListener("pointerup", handlePanelDragEnd, true);
+  document.addEventListener("pointercancel", handlePanelDragEnd, true);
   document.addEventListener("keydown", handleKeyDown, true);
   document.addEventListener("change", scheduleBulkButtonSync, true);
 
@@ -740,6 +746,10 @@ function showPanel(anchor, state) {
       openExtensionSettings();
     }
 
+    if (action === "toggle-summary") {
+      toggleCommentSummary(panel, state.result);
+    }
+
     if (action === "bulk-copy") {
       const index = Number(event.target.closest("[data-index]")?.dataset.index);
       const item = state.items?.[index];
@@ -764,6 +774,60 @@ function showPanel(anchor, state) {
       schedulePreviewRewrite(panel, state, event.target.value);
     }
   });
+}
+
+function handlePanelDragStart(event) {
+  const panel = event.target.closest?.(`.${PANEL_CLASS}`);
+  if (!panel || !isPanelDragSurface(event.target)) {
+    return;
+  }
+
+  const rect = panel.getBoundingClientRect();
+  panelDragState = {
+    panel,
+    pointerId: event.pointerId,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top
+  };
+
+  panel.classList.add("ccr-dragging");
+  panel.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function isPanelDragSurface(target) {
+  const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+  if (!element || element.closest("button, textarea, input, select, a, [contenteditable='true'], .ccr-box, .ccr-label, .ccr-note, .ccr-error, .ccr-status, .ccr-rewrite-status, .ccr-actions")) {
+    return false;
+  }
+
+  return Boolean(element.closest?.(`.${PANEL_CLASS}`));
+}
+
+function handlePanelDragMove(event) {
+  if (!panelDragState || event.pointerId !== panelDragState.pointerId) {
+    return;
+  }
+
+  const { panel, offsetX, offsetY } = panelDragState;
+  const rect = panel.getBoundingClientRect();
+  const nextLeft = clamp(event.clientX - offsetX, 8, window.innerWidth - rect.width - 8);
+  const nextTop = clamp(event.clientY - offsetY, 8, window.innerHeight - rect.height - 8);
+
+  panel.style.left = `${nextLeft}px`;
+  panel.style.top = `${nextTop}px`;
+  panel.style.position = "fixed";
+}
+
+function handlePanelDragEnd(event) {
+  if (!panelDragState || event.pointerId !== panelDragState.pointerId) {
+    return;
+  }
+
+  const { panel } = panelDragState;
+  panel.classList.remove("ccr-dragging");
+  savePanelPosition(panel);
+  panelDragState = null;
 }
 
 function getErrorView(error) {
@@ -809,6 +873,7 @@ function getErrorView(error) {
 function renderResult(result, payload = {}) {
   const commentPreview = result.commentPreview || result.commentTranslation || result.translatedComment || payload.comment || "";
   const replyPreview = result.preview || result.russian || "";
+  const commentSummary = result.commentSummary || result.commentExplanation || "";
 
   return `
     <div class="ccr-top">
@@ -818,8 +883,14 @@ function renderResult(result, payload = {}) {
       </div>
       <button type="button" class="ccr-icon" data-action="close">x</button>
     </div>
-    <label class="ccr-label">Комментарий</label>
+    <label class="ccr-label">Дословный перевод комментария</label>
     <div class="ccr-box ccr-muted">${escapeHtml(commentPreview)}</div>
+    ${
+      commentSummary
+        ? `<button type="button" class="ccr-link-button" data-action="toggle-summary">Дать сводку</button>
+           <div class="ccr-box ccr-muted ccr-summary" data-role="comment-summary" hidden>${escapeHtml(commentSummary)}</div>`
+        : ""
+    }
     <label class="ccr-label">Предложенный ответ</label>
     <div class="ccr-box" data-role="reply-output">${escapeHtml(result.reply || "")}</div>
     <label class="ccr-label">Перевод ответа / ручная правка</label>
@@ -831,6 +902,22 @@ function renderResult(result, payload = {}) {
       <button type="button" class="ccr-secondary" data-action="copy">Копировать</button>
     </div>
   `;
+}
+
+function toggleCommentSummary(panel, result) {
+  const summary = panel.querySelector("[data-role='comment-summary']");
+  const button = panel.querySelector("[data-action='toggle-summary']");
+  if (!summary || !button) {
+    return;
+  }
+
+  const isHidden = summary.hidden;
+  summary.hidden = !isHidden;
+  button.textContent = isHidden ? "Скрыть сводку" : "Дать сводку";
+
+  if (!summary.textContent.trim()) {
+    summary.textContent = result.commentSummary || result.commentExplanation || "";
+  }
 }
 
 function schedulePreviewRewrite(panel, state, editedPreview) {
@@ -1076,6 +1163,7 @@ function renderBulkItem(item, index) {
     item.result?.translatedComment ||
     item.payload.comment ||
     "";
+  const commentSummary = item.result?.commentSummary || item.result?.commentExplanation || "";
   const replyPreview = item.result?.preview || item.result?.russian || "";
 
   if (item.error) {
@@ -1091,8 +1179,9 @@ function renderBulkItem(item, index) {
   return `
     <article class="ccr-bulk-item" data-index="${index}">
       <strong>${escapeHtml(title)}</strong>
-      <label class="ccr-label">Комментарий</label>
+      <label class="ccr-label">Дословный перевод комментария</label>
       <div class="ccr-box ccr-muted">${escapeHtml(commentPreview)}</div>
+      ${commentSummary ? `<div class="ccr-box ccr-muted">${escapeHtml(commentSummary)}</div>` : ""}
       <label class="ccr-label">Предложенный ответ</label>
       <div class="ccr-box">${escapeHtml(item.result.reply)}</div>
       <label class="ccr-label">Перевод ответа</label>
@@ -1111,6 +1200,7 @@ function positionPanel(panel, anchor, options = {}) {
   const width = options.mode === "center" ? Math.min(620, window.innerWidth - margin * 2) : Math.min(440, window.innerWidth - margin * 2);
 
   panel.style.width = `${width}px`;
+  restoreSavedPanelPosition(panel, width, margin);
 
   if (options.mode === "center") {
     panel.style.position = "fixed";
@@ -1136,6 +1226,38 @@ function positionPanel(panel, anchor, options = {}) {
   panel.style.left = `${left}px`;
   panel.style.top = `${top}px`;
   panel.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+}
+
+function restoreSavedPanelPosition(panel, width, margin) {
+  chrome.storage.local.get([PANEL_POSITION_KEY], (values) => {
+    const saved = values[PANEL_POSITION_KEY];
+    if (!saved || activePanel === panel) {
+      return;
+    }
+
+    const measuredHeight = Math.min(panel.offsetHeight || 360, window.innerHeight - margin * 2);
+    const left = clamp(Number(saved.left) || margin, margin, window.innerWidth - width - margin);
+    const top = clamp(Number(saved.top) || margin, margin, window.innerHeight - measuredHeight - margin);
+
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+  });
+}
+
+function savePanelPosition(panel) {
+  const rect = panel.getBoundingClientRect();
+  chrome.storage.local.set({
+    [PANEL_POSITION_KEY]: {
+      left: Math.round(rect.left),
+      top: Math.round(rect.top)
+    }
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 function positionReplyPanel(panel, anchor, commentNode, width, margin) {
@@ -1214,6 +1336,7 @@ function findEditor(commentNode) {
 function closePanel() {
   window.clearTimeout(previewRewriteTimer);
   previewRewriteSequence += 1;
+  panelDragState = null;
   activePanel?.remove();
   activePanel = null;
 }
