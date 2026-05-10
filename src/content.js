@@ -174,7 +174,7 @@ async function suggestForReplyButton(replyButton, anchor) {
     return;
   }
 
-  showPanel(anchor, { loading: true });
+  showPanel(anchor, { loading: true, commentNode });
 
   chrome.runtime.sendMessage(
     {
@@ -183,12 +183,12 @@ async function suggestForReplyButton(replyButton, anchor) {
     },
     (response) => {
       if (chrome.runtime.lastError) {
-        showPanel(anchor, { error: chrome.runtime.lastError.message });
+        showPanel(anchor, { error: chrome.runtime.lastError.message, commentNode });
         return;
       }
 
       if (!response?.ok) {
-        showPanel(anchor, { error: response?.error || "Не удалось получить ответ." });
+        showPanel(anchor, { error: response?.error || "Не удалось получить ответ.", commentNode });
         return;
       }
 
@@ -198,6 +198,11 @@ async function suggestForReplyButton(replyButton, anchor) {
 }
 
 function findCommentContainer(start) {
+  const directComment = start.closest?.("ytcp-comment, ytcp-comment-thread");
+  if (directComment) {
+    return directComment;
+  }
+
   let best = null;
   let bestScore = 0;
   let node = start;
@@ -222,14 +227,14 @@ function findCommentContainer(start) {
 
 function extractCommentPayload(commentNode) {
   const text = removeExtensionText(rawText(commentNode));
-  const emojiOnlyComment = extractEmojiImageComment(commentNode) || extractEmojiOnlyComment(commentNode);
+  const structuredComment = extractStructuredComment(commentNode);
   const lines = normalizeCommentLines(text);
   const visualComment = extractVisualComment(commentNode);
 
   const authorLine = lines.find((line) => line.startsWith("@")) || "";
   const author = authorLine.match(/^@\S+/)?.[0] || "";
   const denseComment = authorLine ? extractCommentFromAuthorLine(authorLine) : "";
-  const comment = emojiOnlyComment || visualComment || denseComment || pickCommentLine(lines, author);
+  const comment = structuredComment || visualComment || denseComment || pickCommentLine(lines, author);
   const commentStyle = detectCommentStyle(comment);
 
   return {
@@ -243,28 +248,66 @@ function extractCommentPayload(commentNode) {
   };
 }
 
-function extractEmojiImageComment(commentNode) {
-  const contentText = commentNode.querySelector?.("#content-text, ytcp-comment #content-text");
-  if (!contentText || !isVisible(contentText)) {
+function extractStructuredComment(commentNode) {
+  const contentText = findCommentContentText(commentNode);
+  if (!contentText) {
     return "";
   }
 
-  const textWithoutImages = Array.from(contentText.childNodes)
-    .filter((node) => node.nodeType === Node.TEXT_NODE)
-    .map((node) => node.textContent || "")
-    .join("")
-    .trim();
-
-  if (textWithoutImages) {
+  const text = normalizeInlineText(readFormattedText(contentText));
+  if (!text) {
     return "";
   }
 
-  const emojiText = [...contentText.querySelectorAll("img.emoji[alt], img[alt]")]
-    .map((image) => image.getAttribute("alt") || "")
-    .join("")
-    .trim();
+  return isLikelyCommentText(text) || isEmojiOnlyText(text) ? text : "";
+}
 
-  return isEmojiOnlyText(emojiText) ? emojiText : "";
+function findCommentContentText(commentNode) {
+  const replyButton = findReplyButtonInside(commentNode);
+  const roots = [];
+  let node = commentNode;
+
+  for (let index = 0; node && index < 5; index += 1) {
+    if (node.nodeType !== Node.ELEMENT_NODE || node === document.body || node === document.documentElement) {
+      break;
+    }
+
+    roots.push(node);
+    node = node.parentElement;
+  }
+
+  for (const root of roots) {
+    const candidates = [...root.querySelectorAll("#content-text")]
+      .filter((element) => isVisible(element))
+      .filter((element) => !replyButton || isElementBefore(element, replyButton));
+
+    if (candidates.length) {
+      return candidates[candidates.length - 1];
+    }
+  }
+
+  return null;
+}
+
+function readFormattedText(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent || "";
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return "";
+  }
+
+  const element = node;
+  if (element.matches?.("img[alt]")) {
+    return element.getAttribute("alt") || "";
+  }
+
+  return [...element.childNodes].map(readFormattedText).join("");
+}
+
+function normalizeInlineText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
 }
 
 function extractEmojiOnlyComment(commentNode) {
@@ -669,7 +712,7 @@ function showPanel(anchor, state) {
   }
 
   document.body.append(panel);
-  positionPanel(panel, anchor);
+  positionPanel(panel, anchor, state.commentNode ? { mode: "reply", commentNode: state.commentNode } : {});
   activePanel = panel;
 
   panel.addEventListener("click", (event) => {
@@ -1065,7 +1108,7 @@ function renderBulkItem(item, index) {
 
 function positionPanel(panel, anchor, options = {}) {
   const margin = 12;
-  const width = options.mode === "center" ? Math.min(620, window.innerWidth - margin * 2) : Math.min(380, window.innerWidth - margin * 2);
+  const width = options.mode === "center" ? Math.min(620, window.innerWidth - margin * 2) : Math.min(440, window.innerWidth - margin * 2);
 
   panel.style.width = `${width}px`;
 
@@ -1077,12 +1120,46 @@ function positionPanel(panel, anchor, options = {}) {
     return;
   }
 
+  if (options.mode === "reply") {
+    positionReplyPanel(panel, anchor, options.commentNode, width, margin);
+    return;
+  }
+
   const rect = anchor.getBoundingClientRect();
   const measuredHeight = Math.min(panel.offsetHeight || 260, window.innerHeight - margin * 2);
   const left = Math.min(Math.max(margin, rect.left), window.innerWidth - width - margin);
   const belowTop = rect.bottom + 8;
   const aboveTop = rect.top - measuredHeight - 8;
   const top = belowTop + measuredHeight <= window.innerHeight - margin ? belowTop : Math.max(margin, aboveTop);
+
+  panel.style.position = "fixed";
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+}
+
+function positionReplyPanel(panel, anchor, commentNode, width, margin) {
+  const anchorRect = anchor.getBoundingClientRect();
+  const commentRect = commentNode?.getBoundingClientRect?.() || anchorRect;
+  const measuredHeight = Math.min(panel.offsetHeight || 360, window.innerHeight - margin * 2);
+  const rightLeft = commentRect.right + 12;
+  const hasRightRoom = rightLeft + width <= window.innerWidth - margin;
+  const belowTop = Math.max(anchorRect.bottom + 12, commentRect.bottom + 8);
+  const hasBelowRoom = belowTop + Math.min(measuredHeight, 360) <= window.innerHeight - margin;
+
+  let left;
+  let top;
+
+  if (hasRightRoom) {
+    left = rightLeft;
+    top = Math.min(Math.max(margin, commentRect.top), window.innerHeight - measuredHeight - margin);
+  } else if (hasBelowRoom) {
+    left = Math.min(Math.max(margin, commentRect.left), window.innerWidth - width - margin);
+    top = belowTop;
+  } else {
+    left = Math.max(margin, window.innerWidth - width - margin);
+    top = Math.max(margin, Math.min(anchorRect.bottom + 12, window.innerHeight - measuredHeight - margin));
+  }
 
   panel.style.position = "fixed";
   panel.style.left = `${left}px`;
