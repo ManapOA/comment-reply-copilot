@@ -218,6 +218,26 @@
   padding: 8px 12px;
 }
 
+.ccr-shuffle {
+  align-items: center;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 6px 9px;
+}
+
+.ccr-shuffle svg {
+  display: block;
+  fill: none;
+  height: 14px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 14px;
+}
+
 .ccr-primary:disabled,
 .ccr-secondary:disabled {
   cursor: wait;

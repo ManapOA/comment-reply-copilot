@@ -4,6 +4,7 @@ const PANEL_CLASS = "ccr-panel";
 const BULK_BATCH_LIMIT = 10;
 const BULK_GENERATE_PAUSE_MS = 250;
 const BULK_SYNC_DELAY_MS = 120;
+const GENERATE_TIMEOUT_MS = 90000;
 const PREVIEW_REWRITE_DELAY_MS = 900;
 const PANEL_POSITION_KEY = "ccrPanelPosition";
 
@@ -185,6 +186,18 @@ async function suggestForReplyButton(replyButton, anchor) {
   }
 
   showPanel(anchor, { loading: true, commentNode });
+  let isFinished = false;
+  const timeoutId = window.setTimeout(() => {
+    if (isFinished) {
+      return;
+    }
+
+    isFinished = true;
+    showPanel(anchor, {
+      error: "Генерация заняла слишком много времени. Попробуй еще раз или выбери другую модель/провайдера.",
+      commentNode
+    });
+  }, GENERATE_TIMEOUT_MS);
 
   chrome.runtime.sendMessage(
     {
@@ -192,17 +205,29 @@ async function suggestForReplyButton(replyButton, anchor) {
       payload
     },
     (response) => {
-      if (chrome.runtime.lastError) {
-        showPanel(anchor, { error: chrome.runtime.lastError.message, commentNode });
-        return;
-      }
+      try {
+        if (isFinished) {
+          return;
+        }
 
-      if (!response?.ok) {
-        showPanel(anchor, { error: response?.error || "Не удалось получить ответ.", commentNode });
-        return;
-      }
+        isFinished = true;
+        window.clearTimeout(timeoutId);
 
-      showPanel(anchor, { result: response.result, commentNode, payload });
+        if (chrome.runtime.lastError) {
+          showPanel(anchor, { error: chrome.runtime.lastError.message, commentNode });
+          return;
+        }
+
+        if (!response?.ok) {
+          showPanel(anchor, { error: response?.error || "Не удалось получить ответ.", commentNode });
+          return;
+        }
+
+        showPanel(anchor, { result: response.result, commentNode, payload });
+      } catch (error) {
+        window.clearTimeout(timeoutId);
+        showPanel(anchor, { error: error.message || "Не удалось показать ответ.", commentNode });
+      }
     }
   );
 }
@@ -723,26 +748,24 @@ function showPanel(anchor, state) {
   panel.className = `${PANEL_CLASS} ${ROOT_CLASS}`;
   panel.setAttribute("role", "dialog");
 
-  if (state.loading) {
-    panel.innerHTML = `<div class="ccr-status">Готовлю ответ...</div>`;
-  } else if (state.customHtml) {
-    panel.innerHTML = state.customHtml;
-  } else if (state.error) {
-    const errorView = getErrorView(state.error);
-    panel.innerHTML = `
-      <div class="ccr-top">
-        <strong>${escapeHtml(errorView.title)}</strong>
-        <button type="button" class="ccr-icon" data-action="close">x</button>
-      </div>
-      <div class="ccr-error">${escapeHtml(errorView.message)}</div>
-      <button type="button" class="ccr-secondary" data-action="settings">${escapeHtml(errorView.button)}</button>
-    `;
-  } else {
-    panel.innerHTML = renderResult(state.result, state.payload);
+  try {
+    if (state.loading) {
+      panel.innerHTML = `<div class="ccr-status">Готовлю ответ...</div>`;
+    } else if (state.customHtml) {
+      panel.innerHTML = state.customHtml;
+    } else if (state.error) {
+      panel.innerHTML = renderError(state.error);
+    } else if (state.result?.reply) {
+      panel.innerHTML = renderResult(state.result, state.payload);
+    } else {
+      panel.innerHTML = renderError("Провайдер вернул пустой ответ. Попробуй еще раз или выбери другую модель.");
+    }
+  } catch (error) {
+    panel.innerHTML = renderError(error.message || "Не удалось показать ответ.");
   }
 
   document.body.append(panel);
-  positionPanel(panel, anchor, state.commentNode ? { mode: "reply", commentNode: state.commentNode } : {});
+  safePositionPanel(panel, anchor, state.commentNode ? { mode: "reply", commentNode: state.commentNode } : {});
   activePanel = panel;
 
   panel.addEventListener("click", (event) => {
@@ -764,6 +787,10 @@ function showPanel(anchor, state) {
       insertReply(state.result.reply, state.commentNode);
       flash(event.target, "Вставлено");
       window.setTimeout(closePanel, 250);
+    }
+
+    if (action === "shuffle") {
+      regenerateVariant(panel, state, event.target);
     }
 
     if (action === "settings") {
@@ -798,6 +825,18 @@ function showPanel(anchor, state) {
       schedulePreviewRewrite(panel, state, event.target.value);
     }
   });
+}
+
+function renderError(error) {
+  const errorView = getErrorView(error);
+  return `
+    <div class="ccr-top">
+      <strong>${escapeHtml(errorView.title)}</strong>
+      <button type="button" class="ccr-icon" data-action="close">x</button>
+    </div>
+    <div class="ccr-error">${escapeHtml(errorView.message)}</div>
+    <button type="button" class="ccr-secondary" data-action="settings">${escapeHtml(errorView.button)}</button>
+  `;
 }
 
 function handlePanelDragStart(event) {
@@ -922,10 +961,48 @@ function renderResult(result, payload = {}) {
     <div class="ccr-rewrite-status" data-role="rewrite-status"></div>
     ${result.note ? `<div class="ccr-note">${escapeHtml(result.note)}</div>` : ""}
     <div class="ccr-actions">
+      <button type="button" class="ccr-secondary ccr-shuffle" data-action="shuffle" title="Generate another variant">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M16 3h5v5"></path>
+          <path d="M4 20l17-17"></path>
+          <path d="M21 16v5h-5"></path>
+          <path d="M15 15l6 6"></path>
+          <path d="M4 4l5 5"></path>
+        </svg>
+        <span>Shuffle</span>
+      </button>
       <button type="button" class="ccr-primary" data-action="insert">Вставить</button>
       <button type="button" class="ccr-secondary" data-action="copy">Копировать</button>
     </div>
   `;
+}
+
+async function regenerateVariant(panel, state, button) {
+  if (!state?.payload) {
+    return;
+  }
+
+  window.clearTimeout(previewRewriteTimer);
+  const insertButton = panel.querySelector("[data-action='insert']");
+  const copyButton = panel.querySelector("[data-action='copy']");
+  button?.setAttribute("disabled", "true");
+  insertButton?.setAttribute("disabled", "true");
+  copyButton?.setAttribute("disabled", "true");
+  setRewriteStatus(panel, "Генерирую другой вариант...");
+
+  try {
+    const result = await sendGenerateMessage({
+      ...state.payload,
+      variationSeed: `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    });
+    state.result = result;
+    panel.innerHTML = renderResult(state.result, state.payload);
+  } catch (error) {
+    setRewriteStatus(panel, error.message || "Не удалось сгенерировать другой вариант.");
+    button?.removeAttribute("disabled");
+    insertButton?.removeAttribute("disabled");
+    copyButton?.removeAttribute("disabled");
+  }
 }
 
 function toggleCommentSummary(panel, result) {
@@ -1147,7 +1224,7 @@ function showBulkResults(items, skippedCount = 0) {
   `;
 
   document.body.append(panel);
-  positionPanel(panel, bulkButton, { mode: "center" });
+  safePositionPanel(panel, bulkButton, { mode: "center" });
   activePanel = panel;
 
   panel.addEventListener("click", (event) => {
@@ -1250,6 +1327,24 @@ function positionPanel(panel, anchor, options = {}) {
   panel.style.left = `${left}px`;
   panel.style.top = `${top}px`;
   panel.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+}
+
+function safePositionPanel(panel, anchor, options = {}) {
+  try {
+    if (!anchor?.getBoundingClientRect) {
+      throw new Error("Panel anchor is missing.");
+    }
+
+    positionPanel(panel, anchor, options);
+  } catch {
+    const margin = 12;
+    const width = Math.min(options.mode === "center" ? 620 : 440, window.innerWidth - margin * 2);
+    panel.style.position = "fixed";
+    panel.style.width = `${width}px`;
+    panel.style.left = `${Math.max(margin, (window.innerWidth - width) / 2)}px`;
+    panel.style.top = `${Math.max(margin, Math.min(80, window.innerHeight * 0.12))}px`;
+    panel.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+  }
 }
 
 function restoreSavedPanelPosition(panel, width, margin) {

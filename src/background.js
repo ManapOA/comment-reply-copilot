@@ -288,7 +288,8 @@ function buildRewritePrompt(settings, payload) {
       "Treat editedPreview as the creator's manual intended answer, usually written in the preview/interface language.",
       "Translate and adapt editedPreview into the target reply language while preserving the creator's meaning exactly.",
       "Use the commenter's detected language when requested reply language is auto; otherwise use the requested reply language.",
-      "Do not answer in Russian unless the target reply language is Russian or the comment is Russian.",
+      "When requested reply language is auto, lock reply to the commenter's detected language even when preview/interface language is Russian.",
+      "Do not answer in Russian unless the target reply language is Russian or the comment itself is Russian.",
       "Avoid repetitive generic openings. Keep the creator's phrasing fresh and natural.",
       "Keep it kind, concise, specific, and safe.",
       "Do not add hashtags or asks for likes/subscriptions unless editedPreview explicitly asks for that.",
@@ -582,7 +583,9 @@ function buildPrompt(settings, payload) {
       `detectedLanguage: detected comment language name in ${previewLanguage}.`,
       `note: brief note in ${previewLanguage} if the comment is unclear, sensitive, insulting, or should not be answered.`,
       "If requested reply language is auto, the reply must be in the detected language of the comment, not in the preview/interface language.",
+      "When requested reply language is auto, lock reply to the commenter's detected language even when preview/interface language is Russian.",
       "If the comment is in a non-Russian language, do not reply in Russian unless the requested reply language is Russian.",
+      "If variationSeed is present, create a noticeably different natural variant while preserving language, meaning, tone, and safety.",
       "Avoid repetitive generic openings like 'Thanks for stopping by', 'Thanks for confirming', and their translations.",
       "Vary wording naturally: use direct appreciation, a short relevant reaction, or a small follow-up depending on the comment.",
       "Use videoTitle and videoContext to understand the video's topic and make the reply feel relevant.",
@@ -607,7 +610,8 @@ function buildPrompt(settings, payload) {
         context: payload.context || "",
         pageTitle: payload.pageTitle || "",
         videoTitle: payload.videoTitle || "",
-        videoContext: payload.videoContext || ""
+        videoContext: payload.videoContext || "",
+        variationSeed: payload.variationSeed || ""
       },
       null,
       2
