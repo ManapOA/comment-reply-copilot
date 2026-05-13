@@ -78,3 +78,16 @@ Data is used only to generate reply drafts requested by the user. API keys and s
 7. Click `Insert` and confirm that the draft is inserted into the reply field but not published.
 8. Select one or more comments with checkboxes and click `AI selected`.
 9. Confirm that one draft reply is generated and inserted per selected comment.
+
+## Release notes for 1.0.3
+
+- Fixed long YouTube comments not being translated correctly.
+- Improved comment text extraction so placeholder fragments like `...!` are not treated as the full comment.
+- Improved fallback reading for YouTube Studio comment text.
+
+## Release notes for 1.0.2
+
+- Added `Shuffle` to regenerate a different reply variant for the same comment.
+- Improved generation error handling, including timeout and empty-response states.
+- Improved reply panel placement reliability in YouTube Studio.
+- Improved auto-language behavior so replies stay in the detected comment language.

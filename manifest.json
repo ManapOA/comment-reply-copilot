@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TubeReply",
   "description": "AI reply drafts for YouTube Studio comments with configurable language previews.",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "permissions": [
     "storage"
   ],

@@ -7,6 +7,7 @@ const BULK_SYNC_DELAY_MS = 120;
 const GENERATE_TIMEOUT_MS = 90000;
 const PREVIEW_REWRITE_DELAY_MS = 900;
 const PANEL_POSITION_KEY = "ccrPanelPosition";
+const COMMENT_TEXT_MAX_LENGTH = 4000;
 
 const bulkProcessed = new WeakSet();
 const suppressedReplyClicks = new WeakSet();
@@ -289,7 +290,7 @@ function extractStructuredComment(commentNode) {
     return "";
   }
 
-  const text = normalizeInlineText(readFormattedText(contentText));
+  const text = readBestCommentText(contentText);
   if (!text) {
     return "";
   }
@@ -341,8 +342,31 @@ function readFormattedText(node) {
   return [...element.childNodes].map(readFormattedText).join("");
 }
 
+function readBestCommentText(element) {
+  const candidates = [
+    readFormattedText(element),
+    element.textContent || "",
+    element.innerText || "",
+    element.getAttribute?.("aria-label") || "",
+    element.getAttribute?.("title") || ""
+  ]
+    .map(normalizeInlineText)
+    .map(stripCommentExpansionText)
+    .filter(Boolean)
+    .filter((text) => !isTruncatedPlaceholderText(text));
+
+  return candidates.sort((a, b) => b.length - a.length)[0] || "";
+}
+
 function normalizeInlineText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function stripCommentExpansionText(text) {
+  return String(text || "")
+    .replace(/\s+(More|Read more)$/i, "")
+    .replace(/\s+(Ð•Ñ‰Ñ‘|Ð•Ñ‰Ðµ)$/i, "")
+    .trim();
 }
 
 function extractEmojiOnlyComment(commentNode) {
@@ -477,7 +501,7 @@ function looksLikeVideoTitle(text) {
 
 function isLikelyCommentText(text) {
   const normalized = String(text || "").trim();
-  if (!normalized || normalized.length > 500) {
+  if (!normalized || normalized.length > COMMENT_TEXT_MAX_LENGTH || isTruncatedPlaceholderText(normalized)) {
     return false;
   }
 
@@ -494,6 +518,19 @@ function isLikelyCommentText(text) {
   }
 
   return true;
+}
+
+function isTruncatedPlaceholderText(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    return true;
+  }
+
+  const withoutEmoji = normalized
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]/gu, "")
+    .trim();
+
+  return /^[.\u2026!?\s]+$/.test(withoutEmoji);
 }
 
 function isEditorText(text) {
