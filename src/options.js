@@ -118,7 +118,7 @@ const MODEL_OPTIONS = {
 
 const UI_TEXT = {
   ru: {
-    privacyHint: "Ключи хранятся только в локальном хранилище Chrome на этом компьютере.",
+    privacyHint: "Ключи хранятся только в локальном хранилище браузера на этом компьютере.",
     uiLanguage: "Язык интерфейса",
     provider: "Провайдер",
     replyLanguage: "Язык ответа",
@@ -132,7 +132,7 @@ const UI_TEXT = {
     sameAsReply: "Как у ответа"
   },
   en: {
-    privacyHint: "Keys are stored only in Chrome local storage on this computer.",
+    privacyHint: "Keys are stored only in browser local storage on this computer.",
     uiLanguage: "Interface language",
     provider: "Provider",
     replyLanguage: "Reply language",

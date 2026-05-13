@@ -17,7 +17,7 @@ The extension may process:
 
 Comment text is sent to the AI provider selected by the user only when the user requests a reply suggestion. The provider returns a draft reply and a preview in the user's selected preview language.
 
-API keys and settings are stored locally in Chrome storage on the user's device. The extension developer does not operate a separate backend server for this extension.
+API keys and settings are stored locally in browser extension storage on the user's device. The extension developer does not operate a separate backend server for this extension.
 
 ## Data sharing
 
@@ -31,4 +31,4 @@ The extension does not automatically publish YouTube comments. It inserts sugges
 
 ## Contact
 
-For privacy questions, contact the extension publisher using the contact information listed in the Chrome Web Store developer account.
+For privacy questions, contact the extension publisher using the contact information listed on the extension's store listing.
